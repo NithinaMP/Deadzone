@@ -6,8 +6,13 @@ import '../models/peer_device.dart';
 import '../widgets/message_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
-  final PeerDevice peer;
-  const ChatScreen({super.key, required this.peer});
+  final String deviceId;
+  final String displayName;
+  const ChatScreen({
+    super.key,
+    required this.deviceId,
+    required this.displayName,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -17,35 +22,58 @@ class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _send(MeshProvider provider) async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     _controller.clear();
-    final sent = await provider.sendTextMessage(peerId: widget.peer.id, plainText: text);
+    final sent = await provider.sendTextMessage(
+      peerDeviceId: widget.deviceId,
+      plainText: text,
+    );
     if (!sent && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Still shaking hands with this device — try again in a moment')),
+        const SnackBar(
+          content: Text('Still saying hi to this phone… try again in a sec 👋'),
+        ),
       );
     }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<MeshProvider>();
-    final messages = provider.conversationWith(widget.peer.id);
+    final messages = provider.conversationWith(widget.deviceId);
+    final inRange =
+        provider.livePeerFor(widget.deviceId)?.status == PeerStatus.connected;
+    _scrollToBottom();
 
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.peer.displayName),
-            Row(
-              children: [
-                Icon(Icons.lock, size: 11, color: AppColors.secure),
-                const SizedBox(width: 4),
-                const Text('End-to-end encrypted', style: TextStyle(fontSize: 11, color: AppColors.secure)),
-              ],
+            Text(widget.displayName),
+            Text(
+              inRange ? 'Right here with you' : 'Out of range — hopping through friends',
+              style: TextStyle(
+                fontSize: 11,
+                color: inRange ? AppColors.signal : AppColors.textMuted,
+              ),
             ),
           ],
         ),
@@ -55,10 +83,13 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: messages.isEmpty
                 ? const Center(
-              child: Text(
-                'No messages yet.\nAnything you send here only this device can read —\nnot even the phones relaying it in between.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textMuted),
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No messages yet 👋\nSay hi! 🔒 Only you two can read this.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textMuted),
+                ),
               ),
             )
                 : ListView.builder(

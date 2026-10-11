@@ -5,7 +5,7 @@ import '../providers/mesh_provider.dart';
 import '../models/peer_device.dart';
 import '../widgets/pulse_radar.dart';
 import 'chat_screen.dart';
-import 'broadcast_screen.dart';
+import 'lobby_screen.dart';
 import 'metrics_screen.dart';
 import 'contacts_screen.dart';
 import 'topology_screen.dart';
@@ -65,13 +65,13 @@ class RadarScreen extends StatelessWidget {
               children: [
                 Text(
                   provider.isMeshActive
-                      ? '${provider.peers.where((p) => p.status == PeerStatus.connected).length} connected nearby'
-                      : 'Mesh offline — tap the signal icon to go live',
+                      ? '${provider.peers.where((p) => p.status == PeerStatus.connected).length} friends nearby'
+                      : 'You\'re offline — tap the signal icon to go live',
                   style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
                 ),
                 if (provider.outboxCount > 0)
                   Text(
-                    '${provider.outboxCount} queued, waiting for mesh',
+                    '${provider.outboxCount} waiting to send',
                     style: const TextStyle(color: AppColors.secure, fontSize: 12),
                   ),
               ],
@@ -93,12 +93,11 @@ class RadarScreen extends StatelessWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.danger,
-        icon: const Icon(Icons.campaign, color: Colors.white),
-        label: const Text('MESH BROADCAST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        icon: const Icon(Icons.forum),
+        label: const Text('LOBBY', style: TextStyle(fontWeight: FontWeight.bold)),
         onPressed: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const BroadcastScreen()),
+          MaterialPageRoute(builder: (_) => const LobbyScreen()),
         ),
       ),
     );
@@ -121,7 +120,7 @@ class RadarScreen extends StatelessWidget {
           return GestureDetector(
             onTap: () => _openChat(context, peer),
             child: Container(
-              width: 72,
+              width: 80,
               margin: const EdgeInsets.only(right: 12),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -150,9 +149,23 @@ class RadarScreen extends StatelessWidget {
   }
 
   void _openChat(BuildContext context, PeerDevice peer) {
+    final deviceId = peer.deviceId;
+    if (deviceId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Still saying hi to this phone… try again in a sec 👋'),
+        ),
+      );
+      return;
+    }
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ChatScreen(peer: peer)),
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          deviceId: deviceId,
+          displayName: peer.displayName,
+        ),
+      ),
     );
   }
 }

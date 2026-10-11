@@ -1,34 +1,28 @@
 import 'dart:convert';
 
-/// A single message as it travels through the mesh.
-///
-/// IMPORTANT: `cipherText` is what every relay device actually sees and
-/// forwards. Only the device whose `receiverId` matches its own ID, and
-/// which holds the matching private key, can turn `cipherText` back into
-/// `plainText`. Relays never touch `plainText` — it doesn't exist on
-/// their device at all.
+/// A single message as it travels through the mesh. Relays only ever see
+/// the ciphertext; only the intended recipient can read it.
 class ChatMessage {
-  final String id; // UUID, used for dedup across the mesh
+  final String id;
   final String senderId;
-  final String receiverId; // peer device id, or 'BROADCAST' for SOS mode
-  final String cipherTextB64; // base64 ciphertext
-  final String nonceB64; // base64 AES-GCM nonce, needed to decrypt
-  final String macB64; // base64 AES-GCM MAC tag
-  final String senderPublicKeyB64; // sender's X25519 public key (for ECDH)
+  final String senderName; // shown in the Lobby so you know who said what
+  final String receiverId; // a deviceId, or 'LOBBY' for everyone
+  final String cipherTextB64;
+  final String nonceB64;
+  final String macB64;
+  final String senderPublicKeyB64;
   final DateTime sentAt;
-  int ttl; // hop budget, decremented at every relay, dropped at 0
+  int ttl;
   bool isBroadcast;
-  String strategyTag; // Phase 3: which routing strategy originated this,
-  // carried through every hop so metrics attribute
-  // delivery/overhead to the right strategy
+  String strategyTag;
 
-  // Local-only fields (not transmitted, not part of what a relay reads)
-  String? decryptedText; // filled in locally once decrypted by the recipient
+  String? decryptedText;
   bool deliveredLocally = false;
 
   ChatMessage({
     required this.id,
     required this.senderId,
+    this.senderName = '',
     required this.receiverId,
     required this.cipherTextB64,
     required this.nonceB64,
@@ -44,6 +38,7 @@ class ChatMessage {
   Map<String, dynamic> toWireJson() => {
     'id': id,
     'senderId': senderId,
+    'senderName': senderName,
     'receiverId': receiverId,
     'cipherText': cipherTextB64,
     'nonce': nonceB64,
@@ -58,6 +53,7 @@ class ChatMessage {
   static ChatMessage fromWireJson(Map<String, dynamic> json) => ChatMessage(
     id: json['id'],
     senderId: json['senderId'],
+    senderName: json['senderName'] ?? '',
     receiverId: json['receiverId'],
     cipherTextB64: json['cipherText'],
     nonceB64: json['nonce'],
@@ -77,6 +73,7 @@ class ChatMessage {
   ChatMessage copyWithTtl(int newTtl) => ChatMessage(
     id: id,
     senderId: senderId,
+    senderName: senderName,
     receiverId: receiverId,
     cipherTextB64: cipherTextB64,
     nonceB64: nonceB64,

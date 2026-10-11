@@ -87,9 +87,10 @@ class StorageService {
 
   List<Map<String, dynamic>> getConversation(String conversationKey) {
     final list = (_messages.get(conversationKey) as List?) ?? [];
-    return list.cast<Map<String, dynamic>>();
+    return list
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
   }
-
   List<String> getAllConversationKeys() => _messages.keys.cast<String>().toList();
 
   // ---------- Peers ----------

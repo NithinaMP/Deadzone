@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:uuid/uuid.dart';
@@ -11,6 +12,24 @@ import '../services/metrics_service.dart';
 import '../services/battery_service.dart';
 
 const _uuid = Uuid();
+
+/// The key used for the group "Lobby" conversation.
+const String lobbyKey = 'LOBBY';
+
+const _adjectives = [
+  'Sneaky', 'Sleepy', 'Jolly', 'Cosmic', 'Fuzzy', 'Zippy',
+  'Mighty', 'Grumpy', 'Bouncy', 'Spicy', 'Cheeky', 'Wobbly',
+];
+const _animals = [
+  'Panda', 'Otter', 'Llama', 'Penguin', 'Koala', 'Gecko',
+  'Walrus', 'Narwhal', 'Hedgehog', 'Capybara', 'Quokka', 'Axolotl',
+];
+
+String _funName() {
+  final r = Random();
+  return '${_adjectives[r.nextInt(_adjectives.length)]} '
+      '${_animals[r.nextInt(_animals.length)]}';
+}
 
 class MeshProvider extends ChangeNotifier {
   final StorageService storage;
@@ -44,7 +63,12 @@ class MeshProvider extends ChangeNotifier {
   Future<void> initialize({String? displayName}) async {
     _myKeyPair = await storage.getOrCreateIdentity();
     myDeviceId = storage.myDeviceId;
-    myDisplayName = displayName ?? storage.myDisplayName ?? 'Device-${myDeviceId.substring(3, 7)}';
+
+    var name = displayName ?? storage.myDisplayName;
+    if (name == null || name.startsWith('Device-')) {
+      name = _funName(); // e.g. "Sneaky Panda"
+    }
+    myDisplayName = name;
     await storage.setMyDisplayName(myDisplayName);
 
     await _loadConversationsFromStorage();
@@ -58,8 +82,7 @@ class MeshProvider extends ChangeNotifier {
     metrics.addListener(notifyListeners);
   }
 
-  /// MOD #4: for each stored conversation, re-decrypt every message so
-  /// the UI has readable text again, not just ciphertext.
+  /// Reload saved chats so they survive closing the app.
   Future<void> _loadConversationsFromStorage() async {
     for (final key in storage.getAllConversationKeys()) {
       final rawMessages = storage.getConversation(key);
@@ -76,8 +99,8 @@ class MeshProvider extends ChangeNotifier {
         if (message.isBroadcast) {
           message.decryptedText = message.cipherTextB64;
         } else if (message.senderId == myDeviceId) {
-          final peerData = storage.getPeer(key);
-          final peerPublicKey = peerData?['publicKey'] as String?;
+          // We sent this one, so use the other person's public key.
+          final peerPublicKey = storage.getPeer(key)?['publicKey'] as String?;
           if (peerPublicKey != null) {
             message.decryptedText = await CryptoService.decrypt(
               payload: EncryptedPayload(
@@ -100,10 +123,8 @@ class MeshProvider extends ChangeNotifier {
             senderPublicKeyB64: message.senderPublicKeyB64,
           );
         }
-
         restored.add(message);
       }
-
       _conversations[key] = restored;
     }
   }
@@ -130,21 +151,39 @@ class MeshProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<ChatMessage> conversationWith(String peerId) =>
-      _conversations[peerId] ?? [];
+  List<ChatMessage> conversationWith(String key) =>
+      _conversations[key] ?? [];
 
+  /// Finds the nearby phone with this permanent device id.
+  /// Prefers one that's actually connected right now.
+  PeerDevice? livePeerFor(String deviceId) {
+    PeerDevice? found;
+    for (final p in peers) {
+      if (p.deviceId == deviceId) {
+        if (p.status == PeerStatus.connected) return p;
+        found ??= p;
+      }
+    }
+    return found;
+  }
+
+  /// Everyone we've ever said hello to, in range or not.
   List<PeerDevice> getAllContacts() {
-    final storedMap = storage.getAllPeersMap();
+    final stored = storage.getAllPeersMap();
     final result = <PeerDevice>[];
+    final seen = <String>{};
 
-    for (final entry in storedMap.entries) {
-      final livePeer = peers.where((p) => p.id == entry.key);
-      if (livePeer.isNotEmpty) {
-        result.add(livePeer.first);
+    for (final entry in stored.entries) {
+      seen.add(entry.key);
+      final live = livePeerFor(entry.key);
+      if (live != null) {
+        result.add(live);
       } else {
         result.add(PeerDevice(
-          id: entry.key,
-          displayName: entry.value['displayName'] as String? ?? 'Unknown device',
+          id: '',
+          deviceId: entry.key,
+          displayName:
+          entry.value['displayName'] as String? ?? 'Unknown friend',
           publicKeyB64: entry.value['publicKey'] as String?,
           status: PeerStatus.lost,
           isDirect: false,
@@ -153,26 +192,21 @@ class MeshProvider extends ChangeNotifier {
     }
 
     for (final p in peers) {
-      if (!storedMap.containsKey(p.id) && p.publicKeyB64 != null) {
+      final id = p.deviceId;
+      if (id != null && !seen.contains(id) && p.publicKeyB64 != null) {
+        seen.add(id);
         result.add(p);
       }
     }
-
     return result;
   }
 
   Future<bool> sendTextMessage({
-    required String peerId,
+    required String peerDeviceId,
     required String plainText,
   }) async {
-    String? publicKeyB64;
-    final live = peers.where((p) => p.id == peerId && p.publicKeyB64 != null);
-    if (live.isNotEmpty) {
-      publicKeyB64 = live.first.publicKeyB64;
-    } else {
-      final stored = storage.getPeer(peerId);
-      publicKeyB64 = stored?['publicKey'] as String?;
-    }
+    String? publicKeyB64 = livePeerFor(peerDeviceId)?.publicKeyB64;
+    publicKeyB64 ??= storage.getPeer(peerDeviceId)?['publicKey'] as String?;
     if (publicKeyB64 == null) return false;
 
     final payload = await CryptoService.encrypt(
@@ -180,13 +214,13 @@ class MeshProvider extends ChangeNotifier {
       senderKeyPair: _myKeyPair,
       recipientPublicKeyB64: publicKeyB64,
     );
-
     final myPubKeyB64 = await storage.getMyPublicKeyB64();
 
     final message = ChatMessage(
       id: _uuid.v4(),
       senderId: myDeviceId,
-      receiverId: peerId,
+      senderName: myDisplayName,
+      receiverId: peerDeviceId,
       cipherTextB64: payload.cipherTextB64,
       nonceB64: payload.nonceB64,
       macB64: payload.macB64,
@@ -196,19 +230,22 @@ class MeshProvider extends ChangeNotifier {
       strategyTag: _currentStrategy.name,
     )..decryptedText = plainText;
 
-    _conversations.putIfAbsent(peerId, () => []).add(message);
-    await storage.saveMessage(peerId, message.toWireJson());
+    _conversations.putIfAbsent(peerDeviceId, () => []).add(message);
+    await storage.saveMessage(peerDeviceId, message.toWireJson());
     await mesh.sendMessage(message);
     notifyListeners();
     return true;
   }
 
-  Future<void> sendBroadcast(String plainText) async {
+  /// A message to the Lobby: everyone nearby with Deadzone open sees it.
+  /// (Not private, so it isn't encrypted to one person.)
+  Future<void> sendLobbyMessage(String plainText) async {
     final myPubKeyB64 = await storage.getMyPublicKeyB64();
     final message = ChatMessage(
       id: _uuid.v4(),
       senderId: myDeviceId,
-      receiverId: 'BROADCAST',
+      senderName: myDisplayName,
+      receiverId: lobbyKey,
       cipherTextB64: plainText,
       nonceB64: '',
       macB64: '',
@@ -219,7 +256,8 @@ class MeshProvider extends ChangeNotifier {
       strategyTag: _currentStrategy.name,
     )..decryptedText = plainText;
 
-    _conversations.putIfAbsent('BROADCAST', () => []).add(message);
+    _conversations.putIfAbsent(lobbyKey, () => []).add(message);
+    await storage.saveMessage(lobbyKey, message.toWireJson());
     await mesh.sendMessage(message);
     notifyListeners();
   }
@@ -240,7 +278,7 @@ class MeshProvider extends ChangeNotifier {
       if (message.decryptedText == null) return;
     }
 
-    final convoKey = message.isBroadcast ? 'BROADCAST' : message.senderId;
+    final convoKey = message.isBroadcast ? lobbyKey : message.senderId;
     _conversations.putIfAbsent(convoKey, () => []).add(message);
     await storage.saveMessage(convoKey, message.toWireJson());
     notifyListeners();

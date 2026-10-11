@@ -71,9 +71,13 @@ class ContactsScreen extends StatelessWidget {
             ),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => ChatScreen(peer: peer)),
-            ),
-          );
+              MaterialPageRoute(
+                builder: (_) => ChatScreen(
+                  deviceId: peer.deviceId ?? peer.id,
+                  displayName: peer.displayName,
+                ),
+              ),
+            ),          );
         },
       ),
     );

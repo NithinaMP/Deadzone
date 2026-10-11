@@ -5,8 +5,14 @@ import '../models/chat_message.dart';
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMine;
+  final bool showSender; // true in the Lobby so you see who said what
 
-  const MessageBubble({super.key, required this.message, required this.isMine});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    required this.isMine,
+    this.showSender = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +40,18 @@ class MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (showSender && !isMine && message.senderName.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                  message.senderName,
+                  style: const TextStyle(
+                    color: AppColors.secure,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             Text(
               message.decryptedText ?? '[unable to decrypt]',
               style: TextStyle(color: textColor, fontSize: 15),
@@ -43,14 +61,15 @@ class MessageBubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  message.isBroadcast ? Icons.campaign : Icons.lock,
+                  message.isBroadcast ? Icons.groups : Icons.lock,
                   size: 11,
                   color: textColor.withOpacity(0.6),
                 ),
                 const SizedBox(width: 4),
                 Text(
                   _formatTime(message.sentAt),
-                  style: TextStyle(fontSize: 10, color: textColor.withOpacity(0.6)),
+                  style: TextStyle(
+                      fontSize: 10, color: textColor.withOpacity(0.6)),
                 ),
               ],
             ),
