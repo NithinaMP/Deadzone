@@ -103,6 +103,18 @@ class StorageService {
   List<Map<String, dynamic>> getAllPeers() =>
       _peers.values.cast<Map<String, dynamic>>().toList();
 
+  /// Same data as getAllPeers(), but keyed by peer id — needed so the
+  /// Contacts screen can open a chat with someone even when they're
+  /// not currently in the live `peers` list from MeshService.
+  Map<String, Map<String, dynamic>> getAllPeersMap() {
+    final result = <String, Map<String, dynamic>>{};
+    for (final key in _peers.keys) {
+      final value = (_peers.get(key) as Map?)?.cast<String, dynamic>();
+      if (value != null) result[key.toString()] = value;
+    }
+    return result;
+  }
+
   // ---------- Seen-message dedup cache ----------
   // This is what stops the mesh from flooding the same message forever.
 
@@ -110,8 +122,6 @@ class StorageService {
 
   Future<void> markMessageSeen(String messageId) async {
     await _seenCache.put(messageId, DateTime.now().toIso8601String());
-    // Keep the cache from growing forever on a long-running device —
-    // trim anything older than 24h whenever we cross a size threshold.
     if (_seenCache.length > 2000) {
       final cutoff = DateTime.now().subtract(const Duration(hours: 24));
       final staleKeys = _seenCache.keys.where((k) {

@@ -7,6 +7,8 @@ import '../widgets/pulse_radar.dart';
 import 'chat_screen.dart';
 import 'broadcast_screen.dart';
 import 'metrics_screen.dart';
+import 'contacts_screen.dart';
+import 'topology_screen.dart';
 
 class RadarScreen extends StatelessWidget {
   const RadarScreen({super.key});
@@ -19,6 +21,22 @@ class RadarScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('DEADZONE'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.contacts, color: AppColors.textMuted),
+            tooltip: 'Known devices',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ContactsScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.hub, color: AppColors.textMuted),
+            tooltip: 'Mesh topology',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TopologyScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.bar_chart, color: AppColors.textMuted),
             tooltip: 'Routing comparison',
@@ -51,6 +69,11 @@ class RadarScreen extends StatelessWidget {
                       : 'Mesh offline — tap the signal icon to go live',
                   style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
                 ),
+                if (provider.outboxCount > 0)
+                  Text(
+                    '${provider.outboxCount} queued, waiting for mesh',
+                    style: const TextStyle(color: AppColors.secure, fontSize: 12),
+                  ),
               ],
             ),
           ),
@@ -72,7 +95,7 @@ class RadarScreen extends StatelessWidget {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.danger,
         icon: const Icon(Icons.campaign, color: Colors.white),
-        label: const Text('SOS BROADCAST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        label: const Text('MESH BROADCAST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const BroadcastScreen()),

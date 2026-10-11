@@ -6,6 +6,7 @@ import '../models/mesh_envelope.dart';
 import 'storage_service.dart';
 import 'routing_strategy.dart';
 import 'metrics_service.dart';
+import 'battery_service.dart';
 import 'dart:typed_data';
 
 class _PendingSend {
@@ -14,29 +15,30 @@ class _PendingSend {
   _PendingSend(this.sentAt, this.strategyTag);
 }
 
-/// This is the networking core. It wraps Google's Nearby Connections API
-/// (BLE + Wi-Fi Direct — works with mobile data AND wifi fully off) and
-/// layers mesh relay logic on top.
-///
-/// PHASE 3 ADDITIONS:
-///  - `routingStrategy` is now pluggable and swappable at runtime (was
-///    hardcoded flood-to-everyone before).
-///  - Delivery is confirmed via a lightweight `ack` envelope flooded
-///    back toward the original sender, so latency/delivery-rate can
-///    actually be measured per strategy.
-///  - Every relay/send/duplicate-drop is recorded into MetricsService,
-///    tagged by which strategy originated the message.
+/// THIS VERSION bundles three modifications on top of Phase 3:
+///  - MOD #1 (outbox): if sendMessage() has zero live connections right
+///    now, the message queues in `_outbox` instead of being silently
+///    lost, and auto-flushes the moment any peer connects.
+///  - MOD #2 (topology activity): `relayActivity` emits every time a
+///    chat envelope is actually sent/relayed to specific peer ids, so
+///    TopologyScreen can animate real traffic instead of faking it.
+///  - MOD #3 (battery-aware relay): before forwarding someone ELSE's
+///    message onward, checks battery via BatteryService — if low,
+///    still delivers locally if addressed to us, still sends our own
+///    outgoing messages, but stops acting as a relay for others.
 class MeshService {
   static const String _serviceId = 'com.deadzone.mesh';
   final Strategy _strategy = Strategy.P2P_CLUSTER;
 
   final StorageService storage;
   final MetricsService metrics;
+  final BatteryService battery;
   RoutingStrategy routingStrategy;
 
   MeshService({
     required this.storage,
     required this.metrics,
+    required this.battery,
     RoutingStrategy? initialStrategy,
   }) : routingStrategy = initialStrategy ?? FloodStrategy();
 
@@ -47,14 +49,17 @@ class MeshService {
   String _myPublicKeyB64 = '';
   String _myDisplayName = '';
 
-  final Map<String, _PendingSend> _pendingSends = {}; // messageId -> pending
+  final Map<String, _PendingSend> _pendingSends = {};
+  final List<ChatMessage> _outbox = [];
+  int get outboxCount => _outbox.length;
 
   final _peersController = StreamController<List<PeerDevice>>.broadcast();
-  final _incomingMessageController =
-  StreamController<ChatMessage>.broadcast();
+  final _incomingMessageController = StreamController<ChatMessage>.broadcast();
+  final _activityController = StreamController<List<String>>.broadcast();
 
   Stream<List<PeerDevice>> get peerStream => _peersController.stream;
   Stream<ChatMessage> get incomingMessages => _incomingMessageController.stream;
+  Stream<List<String>> get relayActivity => _activityController.stream;
 
   final Map<String, PeerDevice> _peers = {};
 
@@ -118,22 +123,18 @@ class MeshService {
     _emitPeers();
     if (status == Status.CONNECTED) {
       _sendHandshake(id);
+      _flushOutbox();
     }
   }
 
   void _sendHandshake(String toEndpointId) {
     final envelope = MeshEnvelope(
       type: MeshEnvelope.typeHandshake,
-      data: {
-        'publicKey': _myPublicKeyB64,
-        'displayName': _myDisplayName,
-      },
+      data: {'publicKey': _myPublicKeyB64, 'displayName': _myDisplayName},
     );
-
     final bytes = Uint8List.fromList(envelope.encode().codeUnits);
+    Nearby().sendBytesPayload(toEndpointId, bytes);  }
 
-    Nearby().sendBytesPayload(toEndpointId, bytes);
-  }
   void _onDisconnected(String id) {
     _peers[id]?.status = PeerStatus.lost;
     _emitPeers();
@@ -204,11 +205,7 @@ class MeshService {
       }
     }
 
-    // Keep flooding even directly-addressed messages onward — this is
-    // intentional (classic flood-routing behavior) and exactly what
-    // lets the metrics screen show the real overhead cost of flood vs
-    // the other strategies.
-    if (message.ttl > 1) {
+    if (message.ttl > 1 && !(await battery.isBatteryLow())) {
       final eligible = _peers.values
           .where((p) => p.id != fromEndpointId && p.status == PeerStatus.connected)
           .toList();
@@ -218,6 +215,7 @@ class MeshService {
       );
       if (targets.isNotEmpty) {
         metrics.recordRelayed(message.strategyTag);
+        _activityController.add(targets.map((p) => p.id).toList());
       }
       _sendEnvelopeTo(
         targets,
@@ -269,14 +267,13 @@ class MeshService {
   }
 
   void _sendEnvelopeTo(List<PeerDevice> targets, MeshEnvelope envelope) {
-    final bytes = Uint8List.fromList(
-      envelope.encode().codeUnits,
-    );
+    final bytes = Uint8List.fromList(envelope.encode().codeUnits);
 
     for (final peer in targets) {
       Nearby().sendBytesPayload(peer.id, bytes);
     }
   }
+
   Future<void> sendMessage(ChatMessage message) async {
     await storage.markMessageSeen(message.id);
     if (!message.isBroadcast) {
@@ -286,11 +283,41 @@ class MeshService {
 
     final connected = _peers.values.where((p) => p.status == PeerStatus.connected).toList();
     final targets = routingStrategy.selectRelayTargets(eligiblePeers: connected, message: message);
+
+    if (targets.isEmpty) {
+      _outbox.add(message);
+      _emitPeers();
+      return;
+    }
+
+    _activityController.add(targets.map((p) => p.id).toList());
     _sendEnvelopeTo(targets, MeshEnvelope(type: MeshEnvelope.typeChat, data: message.toWireJson()));
+  }
+
+  void _flushOutbox() {
+    if (_outbox.isEmpty) return;
+    final connected = _peers.values.where((p) => p.status == PeerStatus.connected).toList();
+    if (connected.isEmpty) return;
+
+    final stillPending = <ChatMessage>[];
+    for (final message in _outbox) {
+      final targets = routingStrategy.selectRelayTargets(eligiblePeers: connected, message: message);
+      if (targets.isEmpty) {
+        stillPending.add(message);
+      } else {
+        _activityController.add(targets.map((p) => p.id).toList());
+        _sendEnvelopeTo(targets, MeshEnvelope(type: MeshEnvelope.typeChat, data: message.toWireJson()));
+      }
+    }
+    _outbox
+      ..clear()
+      ..addAll(stillPending);
+    _emitPeers();
   }
 
   void dispose() {
     _peersController.close();
     _incomingMessageController.close();
+    _activityController.close();
   }
 }
