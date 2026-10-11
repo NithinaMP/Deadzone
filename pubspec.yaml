@@ -72,10 +72,10 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/icon/deadzone_icon.png"
+  image_path: "assets/icon/dzicon.png"
   min_sdk_android: 26
   adaptive_icon_background: "#0A0B0D"
-  adaptive_icon_foreground: "assets/icon/deadzone_icon.png"
+  adaptive_icon_foreground: "assets/icon/dzicon.png"
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

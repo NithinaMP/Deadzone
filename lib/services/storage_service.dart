@@ -73,6 +73,9 @@ class StorageService {
   }
 
   String? get myDisplayName => _identity.get('displayName');
+  /// True once the welcome screen has been completed on this phone.
+  bool get hasOnboarded => _identity.get('onboarded') == true;
+  Future<void> setOnboarded() => _identity.put('onboarded', true);
   Future<void> setMyDisplayName(String name) =>
       _identity.put('displayName', name);
 

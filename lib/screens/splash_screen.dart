@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../theme/app_theme.dart';
 import '../providers/mesh_provider.dart';
 import 'radar_screen.dart';
+import 'welcome_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -22,18 +23,23 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _boot() async {
+    final provider = context.read<MeshProvider>();
+
     setState(() => _status = 'Requesting permissions...');
     await _requestPermissions();
 
-    setState(() => _status = 'Generating device identity...');
-    await context.read<MeshProvider>().initialize();
+    setState(() => _status = 'Getting things ready...');
+    await provider.initialize();
 
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const RadarScreen()),
-      );
-    }
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => provider.hasOnboarded
+            ? const RadarScreen()
+            : const WelcomeScreen(),
+      ),
+    );
   }
 
   /// nearby_connections needs these at runtime on Android. Bluetooth
@@ -76,11 +82,18 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 40),
             const SizedBox(
-              width: 20, height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.signal),
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.signal,
+              ),
             ),
             const SizedBox(height: 16),
-            Text(_status, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            Text(
+              _status,
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
           ],
         ),
       ),

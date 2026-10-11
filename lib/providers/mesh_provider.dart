@@ -142,6 +142,14 @@ class MeshProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get hasOnboarded => storage.hasOnboarded;
+
+  /// Called by the welcome screen: saves your name and marks setup done.
+  Future<void> completeOnboarding(String name) async {
+    await updateDisplayName(name);
+    await storage.setOnboarded();
+  }
+
   Future<void> startMesh() async {
     final myPublicKeyB64 = await storage.getMyPublicKeyB64();
     await mesh.startAdvertisingAndDiscovery(
