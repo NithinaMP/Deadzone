@@ -67,7 +67,8 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.displayName),
+            Text(provider.livePeerFor(widget.deviceId)?.displayName ??
+                widget.displayName),
             Text(
               inRange ? 'Right here with you' : 'Out of range — hopping through friends',
               style: TextStyle(

@@ -236,6 +236,15 @@ class MeshService {
         other.status != PeerStatus.connected);
   }
 
+  /// Tell everyone we're connected to that our name changed.
+  /// (We just send our handshake again, since it carries the name.)
+  void announceNewName(String newName) {
+    _myDisplayName = newName;
+    for (final peer in _connectedPeers) {
+      _sendHandshake(peer.id);
+    }
+  }
+
   void _sendHandshake(String toEndpointId) {
     final envelope = MeshEnvelope(
       type: MeshEnvelope.typeHandshake,
@@ -427,8 +436,10 @@ class MeshService {
     if (!message.isBroadcast) {
       _pendingSends[message.id] =
           _PendingSend(DateTime.now(), message.strategyTag);
+      // Only private messages get a delivery confirmation, so only
+      // those count toward the "reached their friend" numbers.
+      metrics.recordSent(message.strategyTag);
     }
-    metrics.recordSent(message.strategyTag);
 
     final targets = routingStrategy.selectRelayTargets(
       eligiblePeers: _connectedPeers,

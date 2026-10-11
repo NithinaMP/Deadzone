@@ -68,7 +68,7 @@ class MetricsScreen extends StatelessWidget {
         .toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mesh Playground 🎮')),
+      appBar: AppBar(title: const Text('Experiments  🎮')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

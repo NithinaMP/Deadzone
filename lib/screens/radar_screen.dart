@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/mesh_provider.dart';
 import '../models/peer_device.dart';
+import '../utils/avatar.dart';
 import '../widgets/pulse_radar.dart';
 import 'chat_screen.dart';
 import 'lobby_screen.dart';
-import 'metrics_screen.dart';
 import 'contacts_screen.dart';
 import 'topology_screen.dart';
+import 'activity_screen.dart';
+import 'profile_screen.dart';
 
 class RadarScreen extends StatelessWidget {
   const RadarScreen({super.key});
@@ -16,6 +18,9 @@ class RadarScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<MeshProvider>();
+    final nearby = provider.peers
+        .where((p) => p.status == PeerStatus.connected)
+        .length;
 
     return Scaffold(
       appBar: AppBar(
@@ -38,11 +43,11 @@ class RadarScreen extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.bar_chart, color: AppColors.textMuted),
-            tooltip: 'Routing comparison',
+            icon: const Icon(Icons.insights, color: AppColors.textMuted),
+            tooltip: 'Recent activity',
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const MetricsScreen()),
+              MaterialPageRoute(builder: (_) => const ActivityScreen()),
             ),
           ),
           IconButton(
@@ -59,22 +64,39 @@ class RadarScreen extends StatelessWidget {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                _profileChip(context, provider),
+                const Spacer(),
                 Text(
                   provider.isMeshActive
-                      ? '${provider.peers.where((p) => p.status == PeerStatus.connected).length} friends nearby'
-                      : 'You\'re offline — tap the signal icon to go live',
+                      ? '$nearby ${nearby == 1 ? 'friend' : 'friends'} nearby'
+                      : 'Offline',
                   style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
                 ),
-                if (provider.outboxCount > 0)
-                  Text(
-                    '${provider.outboxCount} waiting to send',
-                    style: const TextStyle(color: AppColors.secure, fontSize: 12),
-                  ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!provider.isMeshActive)
+                    const Text(
+                      'Tap the signal icon to go live 📡',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    ),
+                  if (provider.outboxCount > 0)
+                    Text(
+                      '${provider.outboxCount} waiting to send',
+                      style: const TextStyle(color: AppColors.secure, fontSize: 12),
+                    ),
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -98,6 +120,47 @@ class RadarScreen extends StatelessWidget {
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const LobbyScreen()),
+        ),
+      ),
+    );
+  }
+
+  Widget _profileChip(BuildContext context, MeshProvider provider) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              avatarEmojiFor(provider.myDisplayName),
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: Text(
+                provider.myDisplayName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.edit, size: 12, color: AppColors.textMuted),
+          ],
         ),
       ),
     );
@@ -131,7 +194,10 @@ class RadarScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.phone_android, color: AppColors.signal, size: 20),
+                  Text(
+                    avatarEmojiFor(peer.displayName),
+                    style: const TextStyle(fontSize: 20),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     peer.displayName,

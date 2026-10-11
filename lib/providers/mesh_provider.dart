@@ -129,6 +129,19 @@ class MeshProvider extends ChangeNotifier {
     }
   }
 
+  /// Lets the Profile page suggest a fun random name (the 🎲 button).
+  String suggestFunName() => _funName();
+
+  /// Changes your name, saves it, and tells friends who are nearby.
+  Future<void> updateDisplayName(String newName) async {
+    final cleaned = newName.trim();
+    if (cleaned.isEmpty) return;
+    myDisplayName = cleaned;
+    await storage.setMyDisplayName(cleaned);
+    mesh.announceNewName(cleaned);
+    notifyListeners();
+  }
+
   Future<void> startMesh() async {
     final myPublicKeyB64 = await storage.getMyPublicKeyB64();
     await mesh.startAdvertisingAndDiscovery(
